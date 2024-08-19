@@ -16,14 +16,23 @@
 
 FROM gcr.io/oss-fuzz-base/base-builder
 RUN apt-get update && \
-    apt-get install -y pkg-config libtool cmake make autoconf automake ninja-build
+    apt-get install -y pkg-config libtool cmake make autoconf automake ninja-build gdb valgrind tree fish lldb
+
+# ubuntu 20.04 doesn't have new enough automake to make libxml :(
+RUN wget http://mirrors.kernel.org/ubuntu/pool/main/a/automake-1.16/automake_1.16.5-1.3_all.deb
+RUN dpkg -i automake_1.16.5-1.3_all.deb
 
 # Build a newer version of HDF5 than what Ubuntu 20.04 has (which is version 1.10.x)
 WORKDIR /tmp
-RUN wget https://github.com/HDFGroup/hdf5/releases/download/hdf5-1_14_3/hdf5-1_14_3.tar.gz
-RUN echo "126b800e9b87f65e7e7ffa58ee006607bab03a8e11e5209ea3d5c0c331321d43  hdf5-1_14_3.tar.gz" > hdf5.sum
-RUN shasum -a 256 -c hdf5.sum
-RUN tar xf hdf5-1_14_3.tar.gz
+#RUN wget -O hdf5.tar.gz https://github.com/HDFGroup/hdf5/releases/download/hdf5_1.14.4.2/hdf5-1.14.4-2.tar.gz
+#RUN echo "126b800e9b87f65e7e7ffa58ee006607bab03a8e11e5209ea3d5c0c331321d43  hdf5-1_14_3.tar.gz" > hdf5.sum
+#RUN shasum -a 256 -c hdf5.sum
+#RUN tar xf hdf5-1_14_3.tar.gz
+#RUN mkdir -p hdfsrc
+#RUN tar xf hdf5.tar.gz -C hdfsrc --strip-components=2
+RUN mkdir -p hdfsrc
+RUN git clone --depth 1 https://github.com/akshitamav/hdf5.git ./hdfsrc
+#RUN mv "./hdf5-1.14.4.2" hdfsrc
 RUN mkdir -p hdfsrc/build
 WORKDIR /tmp/hdfsrc/build
 RUN cmake -G "Unix Makefiles" \
@@ -31,6 +40,7 @@ RUN cmake -G "Unix Makefiles" \
     -DBUILD_SHARED_LIBS:BOOL=OFF \
     -DBUILD_TESTING:BOOL=OFF \
     -DCMAKE_VERBOSE_MAKEFILES:BOOL=ON \
+    -DCMAKE_BUILD_TYPE=Debug \
     -DHDF5_BUILD_EXAMPLES:BOOL=OFF \
     -DHDF5_BUILD_TOOLS:BOOL=OFF \
     -DHDF5_ENABLE_SANITIZERS:BOOL=ON \
@@ -39,20 +49,22 @@ RUN cmake -G "Unix Makefiles" \
     -DHDF5_BUILD_HL_LIB:BOOL=ON \
     -DHDF5_ENABLE_SZIP_SUPPORT:BOOL=OFF \
     .. && \
-    cmake --build . --verbose --config Release -j$(nproc) && \
+    cmake --build . --verbose --config Debug -j$(nproc) && \
     make install
 
 # Build libxml2 statically (use version 2.10.1 as newer versions require Automake 1.16.3, but Ubuntu 20.04 only supplies 1.16.1)
 WORKDIR /tmp
-RUN wget https://gitlab.gnome.org/GNOME/libxml2/-/archive/v2.10.1/libxml2-v2.10.1.tar.gz
-RUN echo "c89e5d4eb873f209bace159fc1c76e40ce89f4dc94ac382a6c17032624e2840c  libxml2-v2.10.1.tar.gz" > libxml2.sum
-RUN shasum -a 256 -c libxml2.sum
-RUN tar xf libxml2-v2.10.1.tar.gz
-WORKDIR /tmp/libxml2-v2.10.1
+#RUN wget https://gitlab.gnome.org/GNOME/libxml2/-/archive/v2.10.1/libxml2-v2.10.1.tar.gz
+#RUN echo "c89e5d4eb873f209bace159fc1c76e40ce89f4dc94ac382a6c17032624e2840c  libxml2-v2.10.1.tar.gz" > libxml2.sum
+#RUN shasum -a 256 -c libxml2.sum
+#RUN tar xf libxml2-v2.10.1.tar.gz
+#WORKDIR /tmp/libxml2-v2.10.1
+RUN git clone --single-branch --branch debugging --depth 1 https://github.com/akshitamav/libxml2.git ./libxml2
+WORKDIR /tmp/libxml2
 RUN ./autogen.sh \
     --prefix=/opt \
     --disable-shared \
-    --without-debug \
+# --without-debug \
     --without-http \
     --without-lzma \
     --without-zlib \
@@ -62,6 +74,7 @@ RUN ./autogen.sh \
 
 WORKDIR $SRC
 
-RUN git clone --depth 1 https://github.com/OpenNavigationSurface/BAG bag
+#RUN git clone --depth 1 https://github.com/OpenNavigationSurface/BAG bag
+RUN git clone --depth 1 https://github.com/akshitamav/BAG.git bag
 
 RUN cp $SRC/bag/fuzzers/build.sh $SRC/
